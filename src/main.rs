@@ -1,35 +1,51 @@
 
-use std::{fs::read_to_string, io::{prelude::*,  BufReader}, net::{TcpListener, TcpStream}};
+use std::{fs::read_to_string,thread,  time::Duration, io::{prelude::*,  BufReader}, net::{TcpListener, TcpStream}, path::Path};
+use chp_20_rust::ThreadPool;
+
 
 fn main() {
     let listener =  TcpListener::bind("127.0.0.1:7878").unwrap();
+    let pool =  ThreadPool::new(4);
 
     for stream  in  listener.incoming() {
         let stream =  stream.unwrap();
-        handle_connection(stream);
+        pool.execute(|| {
+            handle_connection(stream);
+        });
     }
 }
 
 fn handle_connection(mut stream:  TcpStream){
     let reader =  BufReader::new(& mut stream);
 
-    let http_request:Vec<_>  =  reader
-                                    .lines()
-                                    .map(|res| res.unwrap() )
-                                    .take_while(|line| !line.is_empty())
-                                    .collect();
+    
 
-    let response =  "HTTP/1.1 200 OK\r\n\r\n";
+    let request_line =  reader.lines().next().unwrap().unwrap();
+    let   header; let  path;
 
-    handle_response(stream);
+    match &request_line[..] {
+        "GET / HTTP/1.1" => {
+            (header, path) =  ("HTTP/1.1 200 OK",  "hello.html");
+        },
+        "GET /sleep HTTP/1.1" => {
+            thread::sleep(Duration::from_secs(5));
+            (header, path) =  ("HTTP/1.1 200 OK",  "hello.html");
+        },
+        _ =>{
+            (header, path) =  ("HTTP/1.1 404 NOT FOUND",  "404.html");
+        }
+    }
 
+
+    handle_response(stream, &header, &path);
 }
 
-fn  handle_response(mut stream:  TcpStream){
-    let resp  =  String::from("HTTP/1.1 200 OK\r\n");
-    let message =  read_to_string("/home/routebirds/Documents/work_folder/chp_20_rust/src/hello.html").unwrap();
+fn  handle_response<T>(mut stream:  TcpStream, header:  &str, path:T )
+where T: AsRef<Path>
+{
+    let message =  read_to_string(path).unwrap();
     let length =  message.len();
 
-    let resp =  format!("{resp}Content-Length: {length}\r\n\r\n{message}");
+    let resp =  format!("{header}\r\nContent-Length: {length}\r\n\r\n{message}");
     stream.write_all(resp.as_bytes()).unwrap();
 }
